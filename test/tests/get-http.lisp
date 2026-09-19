@@ -28,6 +28,4 @@
         "http://httpbin.org/get"
         #'(lambda ()
           (setf any-requests-done t))))
-
-    ;; TODO: test throughput exceeding thread count
   ))

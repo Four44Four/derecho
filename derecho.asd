@@ -3,7 +3,7 @@
   :version "0.1.0"
   :author "Me"
   :license "MIT"
-  :depends-on (:cffi :lev :usocket :fast-http :fast-io :babel)
+  :depends-on (:cffi :lev :usocket :fast-http :fast-io :babel :alexandria)
   :serial t
   :components ((:file "package")
                (:module "src"
