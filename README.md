@@ -1,13 +1,13 @@
 # Purpose
  - Common Lisp asynchronous HTTP request client built for [libev](https://software.schmorp.de/pkg/libev.html) through [lev](https://github.com/fukamachi/lev)
 
-# Usage
+## Usage
 ```lisp
 (drch:request *lev-ev-loop-ptr* "http://lisp.org")
 ```
 
-# Run lint
+## Run lint
  - `sbcl --script lint.lisp`
 
-# Run tests
+## Run tests
  - `sbcl --script run-tests.lisp`
