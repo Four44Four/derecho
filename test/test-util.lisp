@@ -69,9 +69,11 @@
 (defun test-request (test-name-in ev-loop-in
                      res-status-num-expected
                      res-body-str-prefix-expected res-body-str-suffix-expected
-                     url-str-in)
+                     url-str-in
+                     &optional on-res-callback)
   (drch:request ev-loop-in url-str-in
     :on-res #'(lambda (status-in response-str-in)
+              (funcall on-res-callback)
               (cond
                 ((/= status-in res-status-num-expected)
                   (format t "~&~A: [31mFAILED[0m, Status code actually: ~D~%" test-name-in status-in))
@@ -89,7 +91,7 @@
                   (format t "~&~A: [32mpassed[0m~%" test-name-in)))))
 )
 
-(defmacro with-lev-event-loop ((ev-loop-sym-name cleanup-form-in) &rest body-in)
+(defmacro with-lev-event-loop ((ev-loop-sym-name &optional cleanup-form-in) &rest body-in)
   `(let ((,ev-loop-sym-name (lev:ev-loop-new 0)))
      (unwind-protect
        (progn
