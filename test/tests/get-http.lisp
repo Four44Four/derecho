@@ -4,7 +4,7 @@
     (sleep 2.0)
 
     (dotimes (i 20)
-      (test-request "request-get-0" *ev-loop*
+      (test-request (format nil "request-get-~D" i) *ev-loop*
         200
         (format nil "{~%  \"args\": {}, ~%  \"headers\": {~%    \"Host\": \"httpbin.org\",")
         (format nil "  \"url\": \"http://httpbin.org/get\"~%}~%")
@@ -19,6 +19,15 @@
       (setf delayed-flag t)
       (test-cond "work-after-is-done-first" (and (not any-requests-done)
                                                  delayed-flag)))
+
+    (dotimes (i 20)
+      (test-request (format nil "request-get-~D" (+ 20 i)) *ev-loop*
+        200
+        (format nil "{~%  \"args\": {}, ~%  \"headers\": {~%    \"Host\": \"httpbin.org\",")
+        (format nil "  \"url\": \"http://httpbin.org/get\"~%}~%")
+        "http://httpbin.org/get"
+        #'(lambda ()
+          (setf any-requests-done t))))
 
     ;; TODO: test throughput exceeding thread count
   ))

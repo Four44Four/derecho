@@ -1,13 +1,19 @@
+(defvar *failed-test-names* '())
+
 (defun test-cond (test-name-in test-cond-in)
   (if test-cond-in
     (format t "~&~A: [32mpassed[0m~%" test-name-in)
-    (format t "~&~A: [31mFAILED[0m~%" test-name-in))
+    (progn
+      (format t "~&~A: [31mFAILED[0m~%" test-name-in)
+      (push test-name-in *failed-test-names*)))
 )
 
 (defun test-eq (test-name-in test-val-expected test-val-actual)
   (if (eq test-val-expected test-val-actual)
     (format t "~&~A: [32mpassed[0m~%" test-name-in)
-    (format t "~&~A: [31mFAILED[0m, Actually: ~A~%" test-name-in test-val-actual))
+    (progn
+      (format t "~&~A: [31mFAILED[0m, Actually: ~A~%" test-name-in test-val-actual)
+      (push test-name-in *failed-test-names*)))
 )
 
 (defun test-list (test-name-in comparators-in test-vals-expected test-vals-actual)
@@ -20,7 +26,9 @@
              test-vals-expected
              test-vals-actual))
     (format t "~&~A: [32mpassed[0m~%" test-name-in)
-    (format t "~&~A: [31mFAILED[0m, Actually: ~A~%" test-name-in test-vals-actual))
+    (progn
+      (format t "~&~A: [31mFAILED[0m, Actually: ~A~%" test-name-in test-vals-actual)
+      (push test-name-in *failed-test-names*)))
 )
 
 (defun test-simple-array (test-name-in elem-equal-pred-in test-array-expected test-array-actual)
@@ -30,7 +38,9 @@
              test-array-expected
              test-array-actual))
     (format t "~&~A: [32mpassed[0m~%" test-name-in)
-    (format t "~&~A: [31mFAILED[0m, Actually: ~A~%" test-name-in test-array-actual))
+    (progn
+      (format t "~&~A: [31mFAILED[0m, Actually: ~A~%" test-name-in test-array-actual)
+      (push test-name-in *failed-test-names*)))
 )
 
 (defun test-usocket-fd (test-name-in)
@@ -62,7 +72,9 @@
 
     (if passed-test-p
       (format t "~&~A: [32mpassed[0m~%" test-name-in)
-      (format t "~&~A: [31mFAILED[0m~%" test-name-in)))
+      (progn
+        (format t "~&~A: [31mFAILED[0m~%" test-name-in)
+        (push test-name-in *failed-test-names*))))
 )
 
 ;; remember to run this inside of a lev event loop
@@ -76,17 +88,22 @@
               (funcall on-res-callback)
               (cond
                 ((/= status-in res-status-num-expected)
-                  (format t "~&~A: [31mFAILED[0m, Status code actually: ~D~%" test-name-in status-in))
+                  (format t "~&~A: [31mFAILED[0m, Status code actually: ~D~%" test-name-in status-in)
+                  (push test-name-in *failed-test-names*))
                 ((> (length res-body-str-prefix-expected)
                     (length response-str-in))
-                  (format t "~&~A: [31mFAILED[0m, Response prefix actually (response too short): `~A`~%" test-name-in response-str-in))
+                  (format t "~&~A: [31mFAILED[0m, Response prefix actually (response too short): `~A`~%" test-name-in response-str-in)
+                  (push test-name-in *failed-test-names*))
                 ((not (uiop:string-prefix-p res-body-str-prefix-expected response-str-in))
-                  (format t "~&~A: [31mFAILED[0m, Response prefix actually: `~A`~%" test-name-in (subseq response-str-in 0 (length res-body-str-prefix-expected))))
+                  (format t "~&~A: [31mFAILED[0m, Response prefix actually: `~A`~%" test-name-in (subseq response-str-in 0 (length res-body-str-prefix-expected)))
+                  (push test-name-in *failed-test-names*))
                 ((> (length res-body-str-suffix-expected)
                     (length response-str-in))
-                  (format t "~&~A: [31mFAILED[0m, Response suffix actually (response too short): `~A`~%" test-name-in response-str-in))
+                  (format t "~&~A: [31mFAILED[0m, Response suffix actually (response too short): `~A`~%" test-name-in response-str-in)
+                  (push test-name-in *failed-test-names*))
                 ((not (uiop:string-suffix-p response-str-in res-body-str-suffix-expected))
-                  (format t "~&~A: [31mFAILED[0m, Response suffix actually: `~A`~%" test-name-in (subseq response-str-in (- (length response-str-in) (length res-body-str-suffix-expected)))))
+                  (format t "~&~A: [31mFAILED[0m, Response suffix actually: `~A`~%" test-name-in (subseq response-str-in (- (length response-str-in) (length res-body-str-suffix-expected))))
+                  (push test-name-in *failed-test-names*))
                 (t
                   (format t "~&~A: [32mpassed[0m~%" test-name-in)))))
 )

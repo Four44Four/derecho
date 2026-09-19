@@ -11,4 +11,12 @@
   (load (uiop:subpathname cur-dir-path "test/test-util.lisp"))
 
   (load (uiop:subpathname cur-dir-path "test/tests/general-util.lisp"))
-  (load (uiop:subpathname cur-dir-path "test/tests/get-http.lisp")))
+  (load (uiop:subpathname cur-dir-path "test/tests/get-http.lisp"))
+
+  (cond
+    ((not (boundp '*failed-test-names*))
+      (format t "~&Couldn't retrieve *failed-test-names*~%"))
+    ((null (symbol-value '*failed-test-names*))
+      (format t "~&[32mall passed[0m~%"))
+    (t
+      (format t "~&[31mSOME FAILED[0m: ~A~%" (symbol-value '*failed-test-names*)))))
