@@ -1,0 +1,20 @@
+ - Woo compatible
+    - Keep in mind that Woo does not use cl-async or libuv, but strictly libev
+    - Each Woo worker thread has its own libev event loop
+    - Each Woo endpoint response must be made on the same libev thread that the response started on
+ - Uses libev as the event-loop
+ - Non-blocking/asynchronous HTTP request
+    - When a request is made:
+       - Initiate the request
+       - Step aside to allow the libev event loop to process other things
+       - When the response is eventually received:
+          - Run the callback on the same libev event loop the request was started on
+ - HTTPS/TLS requests
+ - Supports all main HTTP methods
+    - GET, POST, PUT, PATCH, DELETE, QUERY, etc...
+ - Use lev whenever possible
+ - Use CFFI if absolutely necessary
+ - Support SSE/infinite response streaming
+    - User will have to config to process response in the chunks they arrive in, instead of collecting everything into 1 combined buffer when the response says its finished
+    - Instead of just an "on-finished" callback, there will be a "on-chunk" callback
+ - Must be able to support >1000 pending HTTP requests on a single thread

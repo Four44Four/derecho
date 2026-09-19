@@ -1,0 +1,25 @@
+(require :uiop)
+(require :asdf)
+
+(load "~/quicklisp/setup.lisp")
+
+(let ((cur-dir-path (uiop:pathname-directory-pathname *load-truename*))
+      (asdf:*compile-file-warnings-behaviour* :error)
+      (asdf:*compile-file-failure-behaviour* :error))
+  (push cur-dir-path asdf:*central-registry*)
+  (handler-case
+    (handler-bind ((warning #'(lambda (warning-in)
+                                (error "Warning as error:~%~A" warning-in))))
+      (setf cl:*compile-verbose* t
+            cl:*compile-print* t)
+      (asdf:compile-system :derecho :force t)
+      (format t "~&[32mLINT PASSED[0m~%"))
+    (asdf:compile-file-error (error-in)
+      (let ((component-in (asdf:error-component)))
+        (format *error-output* "~&[31mLINT FAILED (Compile Error)[0m:~%")
+        (format *error-output* "Component/File: ~A~%" (asdf:component-pathname component-in))
+        (format *error-output* "Description: ~A~%" error-in)
+        (uiop:quit 1)))
+    (error (error-in)
+      (format *error-output* "~&[31mLINT FAILED[0m: ~A~%" error-in)
+      (uiop:quit 1))))

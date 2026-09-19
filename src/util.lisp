@@ -1,0 +1,147 @@
+(in-package #:derecho)
+
+;; returns `:http` if `url-string-in` starts with "http://"
+;;         or `:https` if `url-string-in` starts with "https://"
+;;         or `nil` if neither
+(declaim (inline http-url-p)
+         (ftype (function (string)
+                  (member :https :http nil))
+                http-url-p))
+(defun http-url-p (url-string-in)
+  (declare (optimize (speed 3) (safety 0) (debug 0))
+           (type string url-string-in))
+  (let ((len (length url-string-in)))
+    (declare (type fixnum len))
+    (and (>= len 7)
+         (char= #\h (char url-string-in 0))
+         (char= #\t (char url-string-in 1))
+         (char= #\t (char url-string-in 2))
+         (char= #\p (char url-string-in 3))
+         (if (char= #\s (char url-string-in 4))
+           ;; handle "https://"
+           (and (>= len 8)
+                (char= #\: (char url-string-in 5))
+                (char= #\/ (char url-string-in 6))
+                (char= #\/ (char url-string-in 7))
+                :https)
+           ;; handle "http://"
+           (and (char= #\: (char url-string-in 4))
+                (char= #\/ (char url-string-in 5))
+                (char= #\/ (char url-string-in 6))
+                :http))))
+)
+
+;; `url-string-in` must start with `http://` or `https://`
+;; returns `(values <host-str> <path-str> <port-num>)`
+;;   `<host-str>` should always be between the `://` and the next `:` or `/`
+;;     Includes any explicit port number
+;;   `<path-str>` should be everything past the `<port-num>` if it exists, or else everything past `<host-str>`
+;;     Includes the leading `/`
+;;     Will be `"/"` if there is no third `/`
+;;   `<port-num>` should be between the second `:` and end-of-string or third `/`
+;;     If there is no second `:`:
+;;       If the `url-string` starts with `http://`:
+;;         `<port-num>` will be `80`
+;;       Else:
+;;         `<port-num>` will be `443`
+(declaim (ftype (function (string)
+                  (values string string fixnum &optional))
+                parse-url))
+(defun parse-url (url-string-in)
+  (declare (optimize (speed 3) (safety 1))
+           (type string url-string-in))
+  (let ((http-url-p-res (http-url-p url-string-in)))
+    (declare (type (member :https :http nil) http-url-p-res))
+    (unless http-url-p-res
+      (error "`url-string-in` does not start with `http://` or `https://`"))
+    (let* (;; skips the "://"
+           (host-start-pos (if (eq :http http-url-p-res)
+                             7
+                             8))
+           ;; finds the first `/` after the start of the host
+           (post-scheme-slash-pos (position #\/ url-string-in :start host-start-pos :test #'char=))
+           (second-colon-pos (position #\: url-string-in :start host-start-pos :end post-scheme-slash-pos :test #'char=))
+           (host-str (subseq url-string-in host-start-pos post-scheme-slash-pos))
+           (path-str (if post-scheme-slash-pos
+                       (subseq url-string-in post-scheme-slash-pos)
+                       "/")))
+      (declare (type fixnum host-start-pos)
+               (type (or null fixnum) post-scheme-slash-pos
+                                      second-colon-pos)
+               (type string host-str
+                            path-str))
+      (if second-colon-pos
+        ;; explicit port
+        (values host-str
+                path-str
+                (parse-integer url-string-in :start (1+ second-colon-pos) :end post-scheme-slash-pos))
+        ;; implicit port
+        (values host-str
+                path-str
+                (if (eq :http http-url-p-res)
+                  80
+                  443)))))
+)
+
+(unless (boundp '+GET_BYTE_ARRAY+)
+  (defconstant +GET_BYTE_ARRAY+ (coerce #(71 69 84 32)
+                                        '(simple-array (unsigned-byte 8) (*)))))
+(unless (boundp '+REQ_LINE_ARRAY+)
+  (defconstant +REQ_LINE_ARRAY+ (coerce #(32 72 84 84 80 47 49 46 49 13 10 72 111 115 116 58 32)
+                                        '(simple-array (unsigned-byte 8) (*)))))
+(unless (boundp '+CONN_CLOSE_ARRAY+)
+  (defconstant +CONN_CLOSE_ARRAY+ (coerce #(13 10 67 111 110 110 101 99 116 105 111 110 58 32 99 108 111 115 101 13 10 13 10)
+                                          '(simple-array (unsigned-byte 8) (*)))))
+
+;; returns a byte array of the HTTP 1.1 request payload
+(declaim (inline build-http-request-bytes)
+         (ftype (function (string string)
+                  (simple-array (unsigned-byte 8) (*)))
+                build-http-request-bytes))
+(defun build-http-request-bytes (host-str-in path-str-in)
+  (declare (optimize (speed 3) (safety 1))
+           (type string host-str-in
+                        path-str-in))
+  (fast-io:with-fast-output (buffer-out :vector)
+    ;; TODO: change this later when added support for other HTTP request methods
+    ;; "GET "
+    (fast-io:fast-write-sequence +GET_BYTE_ARRAY+ buffer-out)
+    (fast-io:fast-write-sequence (babel:string-to-octets path-str-in) buffer-out)
+    ;; " HTTP/1.1\r\nHost: "
+    (fast-io:fast-write-sequence +REQ_LINE_ARRAY+ buffer-out)
+    (fast-io:fast-write-sequence (babel:string-to-octets host-str-in) buffer-out)
+    ;; "\r\nConnection: close\r\n\r\n"
+    (fast-io:fast-write-sequence +CONN_CLOSE_ARRAY+ buffer-out))
+)
+
+(declaim (inline get-usocket-fd)
+         (ftype (function (usocket:usocket)
+                  fixnum)
+                get-usocket-fd))
+(defun get-usocket-fd (usock-in)
+  (declare (optimize (speed 3) (safety 1))
+           (type usocket:usocket usock-in))
+  (let ((raw-socket (usocket:socket usock-in)))
+    #+sbcl
+      (locally
+        (declare (type sb-bsd-sockets:socket raw-socket))
+        (the fixnum
+             (sb-bsd-sockets:socket-file-descriptor raw-socket)))
+    #+ccl
+      (the fixnum
+           (ccl:socket-device raw-socket))
+    #+ecl
+      (the fixnum
+           (si:socket-file-descriptor raw-socket))
+    #+lispworks
+      (the fixnum
+           (comm::socket-stream-socket raw-socket))
+    #+allegro
+      (the fixnum
+           (socket:socket-handle raw-socket))
+    #+clisp
+      (the fixnum
+           (car (ext:stream-handles raw-socket)))
+    #-(or sbcl ccl ecl lispworks allegro clisp)
+      (error "Unsupported CL implementation for `get-usocket-fd`"))
+)
