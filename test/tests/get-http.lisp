@@ -4,7 +4,7 @@
     (sleep 2.0)
 
     (dotimes (i 20)
-      (test-request (format nil "request-get-~D" i) *ev-loop*
+      (test-request (format nil "remote-http-request-get-~D" i) *ev-loop*
         200
         (format nil "{~%  \"args\": {}, ~%  \"headers\": {~%    \"Host\": \"httpbin.org\",")
         (format nil "  \"url\": \"http://httpbin.org/get\"~%}~%")
@@ -21,7 +21,7 @@
                                                  delayed-flag)))
 
     (dotimes (i 20)
-      (test-request (format nil "request-get-~D" (+ 20 i)) *ev-loop*
+      (test-request (format nil "remote-http-request-get-~D" (+ 20 i)) *ev-loop*
         200
         (format nil "{~%  \"args\": {}, ~%  \"headers\": {~%    \"Host\": \"httpbin.org\",")
         (format nil "  \"url\": \"http://httpbin.org/get\"~%}~%")

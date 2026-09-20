@@ -6,6 +6,9 @@
 
 (let ((cur-dir-path (uiop:pathname-directory-pathname *load-truename*)))
   (push cur-dir-path asdf:*central-registry*)
+
+  (defparameter cl-user::*derecho-response-buffer-size* 4096)
+
   (ql:quickload :derecho)
   ;; (asdf:load-system :derecho)
   (load (uiop:subpathname cur-dir-path "test/test-util.lisp"))

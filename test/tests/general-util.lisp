@@ -1,3 +1,5 @@
+(test-eq "customize-0" 4096 (drch::+RESPONSE_BUFFER_SIZE+))
+
 (test-eq "http-url-p-0" :http (drch::http-url-p "http://hi.org"))
 (test-eq "http-url-p-1" nil (drch::http-url-p "http:/hi.org"))
 (test-eq "http-url-p-2" :https (drch::http-url-p "https://hi.org"))

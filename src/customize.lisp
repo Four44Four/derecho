@@ -1,6 +1,6 @@
 (in-package #:derecho)
 
-;; You can define these before `defsystem` in your .asd file:
+;; You can define these before `defsystem` in your .asd file via `defparameter`:
 ;;   `cl-user::*derecho-response-buffer-size*` -> number of bytes that a response buffer gets allocated per request
 
 (eval-when (:compile-toplevel :load-toplevel :execute)
