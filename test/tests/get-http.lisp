@@ -28,4 +28,16 @@
         "http://httpbin.org/get"
         #'(lambda ()
           (setf any-requests-done t))))
+
+    ;; TESTING SERVER SHOULD HAVE STARTED BY NOW
+
+    (format t "~& >> Starting slow requests...~%")
+    (dotimes (i 20)
+      (test-request (format nil "local-http-slow-request-get-~D" i) *ev-loop*
+        200
+        "asdfghjkl"
+        "zxcvbnm"
+        "http://localhost:8080/slow-response"))
+    (format t "~& >> Sent all slow requests~%")
+
   ))

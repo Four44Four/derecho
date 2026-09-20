@@ -12,6 +12,7 @@
   (ql:quickload :derecho)
   ;; (asdf:load-system :derecho)
   (load (uiop:subpathname cur-dir-path "test/test-util.lisp"))
+  (load (uiop:subpathname cur-dir-path "test/run-test-server.lisp"))
 
   (load (uiop:subpathname cur-dir-path "test/tests/general-util.lisp"))
   (load (uiop:subpathname cur-dir-path "test/tests/get-http.lisp"))
