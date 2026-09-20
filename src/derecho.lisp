@@ -157,7 +157,12 @@
                           path-in)
              (type fixnum port-in))
 
-    (let* ((usock (usocket:socket-connect host-in port-in :element-type '(unsigned-byte 8)))
+    (let* ((host-colon-pos (position #\: host-in :test #'char=))
+           (usock (usocket:socket-connect
+                    (if host-colon-pos
+                      (subseq host-in 0 host-colon-pos)
+                      host-in)
+                    port-in :element-type '(unsigned-byte 8)))
            (fd (get-usocket-fd usock))
            (io-watcher (cffi:foreign-alloc '(:struct lev:ev-io)))
            (req-bytes (build-http-request-bytes host-in path-in))
