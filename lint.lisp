@@ -12,7 +12,7 @@
                                 (error "Warning as error:~%~A" warning-in))))
       (setf cl:*compile-verbose* t
             cl:*compile-print* t)
-      (asdf:compile-system :derecho :force t)
+      (asdf:compile-system :derecho)
       (format t "~&[32mLINT PASSED[0m~%"))
     (asdf:compile-file-error (error-in)
       (let ((component-in (asdf:error-component)))

@@ -4,8 +4,6 @@
 ;;       add non-GET HTTP request method support
 ;;       add SSE/streaming response callback support
 
-(defconstant +RESPONSE_BUFFER_SIZE+ 8192)
-
 (cffi:defcfun ("recv" --recv) :ssize
   (fd :int) (buf :pointer) (len :size) (flags :int))
 
@@ -45,7 +43,7 @@
     :type fixnum)
   (raw-read-buffer (cffi:null-pointer)
     :type cffi:foreign-pointer)
-  (read-buffer (make-array +RESPONSE_BUFFER_SIZE+ :element-type '(unsigned-byte 8))
+  (read-buffer (make-array (+RESPONSE_BUFFER_SIZE+) :element-type '(unsigned-byte 8))
     :type (simple-array (unsigned-byte 8) (*)))
   (response-body (make-array 0 :element-type '(unsigned-byte 8) :adjustable t :fill-pointer 0)
     :type (vector (unsigned-byte 8)))
@@ -114,7 +112,7 @@
         ;; if `event-in` is a read event
         (unless (zerop (logand events-in lev:+ev-read+))
           (let* ((raw-read-buffer-in (http-client-raw-read-buffer client-in))
-                 (recv-res (--recv fd-in raw-read-buffer-in +RESPONSE_BUFFER_SIZE+ 0)))
+                 (recv-res (--recv fd-in raw-read-buffer-in (+RESPONSE_BUFFER_SIZE+) 0)))
             (declare (type cffi:foreign-pointer raw-read-buffer-in)
                      (type fixnum recv-res))
             (cond
@@ -134,7 +132,7 @@
                     (cffi:foreign-funcall "memcpy"
                                           :pointer read-buffer-in-ptr
                                           :pointer raw-read-buffer-in
-                                          :size +RESPONSE_BUFFER_SIZE+
+                                          :size (+RESPONSE_BUFFER_SIZE+)
                                           :pointer))
                   (funcall (http-client-parser client-in)
                            read-buffer-in
@@ -167,7 +165,7 @@
                                      :ev-loop ev-loop-in
                                      :io-watcher io-watcher
                                      :write-buffer req-bytes
-                                     :raw-read-buffer (cffi:foreign-alloc :unsigned-char :count +RESPONSE_BUFFER_SIZE+)
+                                     :raw-read-buffer (cffi:foreign-alloc :unsigned-char :count (+RESPONSE_BUFFER_SIZE+))
                                      :on-res-fn on-res))
            (http-res-state (fast-http:make-http-response)))
       (declare ;(type usocket:usocket usock)

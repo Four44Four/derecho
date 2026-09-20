@@ -8,5 +8,6 @@
   :components ((:file "package")
                (:module "src"
                 :serial t
-                :components ((:file "util")
+                :components ((:file "customize")
+                             (:file "util")
                              (:file "derecho")))))
