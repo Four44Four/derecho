@@ -3,6 +3,14 @@
 ;; TODO: add TLS/HTTPS support
 ;;       add non-GET HTTP request method support
 ;;       add SSE/streaming response callback support
+;;       add threadsafe global socket cache to impl connection pooling
+;;         - opt-in to try and reuse a cached socket
+;;         - opt-in to try and cache the resulting socket
+;;         - sockets will be pruned from socket cache when:
+;;            - response includes `Connection: close`
+;;            - writing to the socket fails (socket's file descriptor is closed/broken)
+;;               - try and open a new socket + cache it if specified
+;;            - socket cache size exceeds capacity (default 128) (LRU socket is pruned on addition of a new one)
 
 (cffi:defcfun ("recv" --recv) :ssize
   (fd :int) (buf :pointer) (len :size) (flags :int))

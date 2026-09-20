@@ -1,5 +1,5 @@
 (defsystem #:derecho
-  :description "Single-threaded libev/lev asynchronous HTTP client"
+  :description "libev/lev asynchronous HTTP client"
   :version "0.1.0"
   :author "Me"
   :license "MIT"
