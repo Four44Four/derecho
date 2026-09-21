@@ -12,6 +12,11 @@
     - Ubuntu/Debian: `sudo apt install libev-dev`
     - MacOS: `brew install libev`
     - FreeBSD: `pkg install libev`
+ - [OpenSSL](https://openssl-library.org/)
+    - Arch Linux: `sudo pacman -S openssl pkgconf base-devel`
+    - Ubuntu/Debian: `sudo apt install libssl-dev`
+    - MacOS: `brew install openssl`
+    - FreeBSD: `pkg install openssl`
 
 ## Run lint
  - `sbcl --script lint.lisp`

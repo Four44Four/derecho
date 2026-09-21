@@ -1,7 +1,6 @@
 (in-package #:derecho)
 
-;; TODO: add TLS/HTTPS support
-;;       add non-GET HTTP request method support
+;; TODO: add non-GET HTTP request method support
 ;;       add SSE/streaming response callback support
 ;;       add threadsafe global socket cache to impl connection pooling
 ;;         - opt-in to try and reuse a cached socket
@@ -11,20 +10,12 @@
 ;;            - writing to the socket fails (socket's file descriptor is closed/broken)
 ;;               - try and open a new socket + cache it if specified
 ;;            - socket cache size exceeds capacity (default 128) (LRU socket is pruned on addition of a new one)
+;;         - sockets CANNOT be used across event loops:
+;;            - connections can only reuse cached sockets from the same event loop and can only leave cached sockets for their own event loop
 
-(cffi:defcfun ("recv" --recv) :ssize
-  (fd :int) (buf :pointer) (len :size) (flags :int))
-
-(cffi:defcfun ("send" --send) :ssize
-  (fd :int) (buf :pointer) (len :size) (flags :int))
-
-(cffi:defcfun ("close" --close) :int
-  (fd :int))
-
-(cffi:defcfun ("fcntl" --fcntl) :int
-  (fd :int) (cmd :int) (arg :int))
-
-(declaim (ftype (function (fixnum) fixnum) set-non-blocking))
+(declaim (ftype (function (fixnum)
+                  fixnum)
+                 set-non-blocking))
 (defun set-non-blocking (fd-in)
   (declare (optimize (speed 3) (safety 1))
            (type fixnum fd-in))
@@ -43,14 +34,16 @@
     :type cffi:foreign-pointer)
   (io-watcher (cffi:null-pointer)
     :type cffi:foreign-pointer)
+  (tls-handshaking-p nil
+    :type boolean)
+  (ssl-handle nil
+    :type (or null cffi:foreign-pointer))
   (parser #'(lambda (data-in &key start end) (declare (ignore data-in start end)))
     :type function)
   (write-buffer (make-array 0 :element-type '(unsigned-byte 8))
     :type (simple-array (unsigned-byte 8) (*)))
   (write-pos 0
     :type fixnum)
-  (raw-read-buffer (cffi:null-pointer)
-    :type cffi:foreign-pointer)
   (read-buffer (make-array (+RESPONSE_BUFFER_SIZE+) :element-type '(unsigned-byte 8))
     :type (simple-array (unsigned-byte 8) (*)))
   (response-body (make-array 0 :element-type '(unsigned-byte 8) :adjustable t :fill-pointer 0)
@@ -59,25 +52,55 @@
     :type function))
 
 (declaim (ftype (function (http-client)
-                  fixnum)
+                  (eql t))
                 free-http-client))
 (defun free-http-client (client-in)
   (declare (optimize (speed 3) (safety 1))
            (type http-client client-in))
   (let ((io-watcher-in (http-client-io-watcher client-in))
         (ev-loop-in (http-client-ev-loop client-in))
-        (raw-read-buffer-in (http-client-raw-read-buffer client-in)))
+        (ssl-handle-in (http-client-ssl-handle client-in)))
     (declare (type cffi:foreign-pointer io-watcher-in
-                                        ev-loop-in
-                                        raw-read-buffer-in))
+                                        ev-loop-in)
+             (type (or null cffi:foreign-pointer) ssl-handle-in))
     (lev:ev-io-stop ev-loop-in io-watcher-in)
     (remhash (cffi:pointer-address io-watcher-in)
              *http-clients*)
     (cffi:foreign-free io-watcher-in)
-    (cffi:foreign-free raw-read-buffer-in)
-    (--close (http-client-fd client-in)))
+
+    (when ssl-handle-in
+      (--ssl-shutdown ssl-handle-in)
+      (--ssl-free ssl-handle-in))
+    (--close (http-client-fd client-in))
+
+    t)
 )
 
+(declaim (ftype (function (cffi:foreign-pointer cffi:foreign-pointer fixnum fixnum)
+                  (eql t))
+                change-lev-io-watcher-mode))
+(defun change-lev-io-watcher-mode (ev-loop-in io-watcher-in fd-in listen-mode-in)
+  (declare (optimize (speed 3) (safety 0))
+           (type cffi:foreign-pointer ev-loop-in
+                                      io-watcher-in)
+           (type fixnum fd-in
+                        listen-mode-in))
+  (lev:ev-io-stop ev-loop-in io-watcher-in)
+  (lev:ev-io-init io-watcher-in 'client-io-cb fd-in listen-mode-in)
+  (lev:ev-io-start ev-loop-in io-watcher-in)
+  t
+)
+
+(declaim (ftype (function (string http-client)
+                  (eql t))
+                 abort-request))
+(defun abort-request (reason-str-in http-client-in)
+  (declare (optimize (speed 3) (safety 0))
+           (type string reason-str-in)
+           (type http-client http-client-in))
+  (format *error-output* "~& [derecho] >> ~A~%" reason-str-in)
+  (free-http-client http-client-in)
+)
 
 (cffi:defcallback client-io-cb :void ((ev-loop-in :pointer) (io-watcher-in :pointer) (events-in :int))
   ;; do things whenever an event occurs
@@ -85,67 +108,99 @@
                             *http-clients*)))
     (declare (type (or null http-client) client-in))
     (when client-in
-      (let ((fd-in (http-client-fd client-in)))
-        (declare (type fixnum fd-in))
+      (let ((fd-in (http-client-fd client-in))
+            (ssl-handle-in (http-client-ssl-handle client-in)))
+        (declare (type fixnum fd-in)
+                 (type (or null cffi:foreign-pointer) ssl-handle-in))
 
-        ;; if `event-in` is a write event
-        (unless (zerop (logand events-in lev:+ev-write+))
-          (let* ((write-buffer-in (http-client-write-buffer client-in))
-                 (write-pos-in (http-client-write-pos client-in))
-                 (writable-len-left-in (- (length write-buffer-in)
-                                          write-pos-in)))
-            (declare (type (simple-array (unsigned-byte 8) (*)) write-buffer-in)
-                     (type fixnum write-pos-in
-                                  writable-len-left-in))
-            ;; sends the write-buffer data from `write-pos-in` to the end of `write-buffer-in`
-            (cffi:with-pointer-to-vector-data (write-buffer-ptr write-buffer-in)
-              (let ((send-res (--send fd-in (cffi:inc-pointer write-buffer-ptr write-pos-in) writable-len-left-in 0)))
-                (declare (type fixnum send-res))
+          (if (http-client-tls-handshaking-p client-in)
+            ;; handle tls handshaking
+            (let ((ssl-connect-res (--ssl-connect ssl-handle-in)))
+              (if (= 1 ssl-connect-res)
+                ;; successful handshake -> start writing request
+                (progn
+                  (setf (http-client-tls-handshaking-p client-in)
+                        nil)
+                  (change-lev-io-watcher-mode ev-loop-in io-watcher-in fd-in lev:+ev-write+))
+                ;; handle failed handshake
+                (let ((ssl-error (--ssl-get-error ssl-handle-in ssl-connect-res)))
+                  (cond
+                    ((= ssl-error +ssl-error-want-read+)
+                      (change-lev-io-watcher-mode ev-loop-in io-watcher-in fd-in lev:+ev-read+))
+                    ((= ssl-error +ssl-error-want-write+)
+                      (change-lev-io-watcher-mode ev-loop-in io-watcher-in fd-in lev:+ev-write+))
+                    (t
+                      (abort-request "Error occurred while doing TLS handshake" client-in))))))
+
+          (progn
+            ;; if `event-in` is a write event
+            (unless (zerop (logand events-in lev:+ev-write+))
+              (let* ((write-buffer-in (http-client-write-buffer client-in))
+                     (write-pos-in (http-client-write-pos client-in))
+                     (writable-len-left-in (- (length write-buffer-in)
+                                              write-pos-in)))
+                (declare (type (simple-array (unsigned-byte 8) (*)) write-buffer-in)
+                         (type fixnum write-pos-in
+                                      writable-len-left-in))
+                ;; sends as much write-buffer data from `write-pos-in` to the end of `write-buffer-in` as possible
+                (cffi:with-pointer-to-vector-data (write-buffer-ptr write-buffer-in)
+                  (let ((bytes-sent (if ssl-handle-in
+                                       (--ssl-write ssl-handle-in (cffi:inc-pointer write-buffer-ptr write-pos-in) writable-len-left-in)
+                                       (--send fd-in (cffi:inc-pointer write-buffer-ptr write-pos-in) writable-len-left-in 0))))
+                    (if (>= bytes-sent 0)
+                      ;; data was sent -> move up the write position
+                      (incf (http-client-write-pos client-in)
+                            bytes-sent)
+                      ;; sending error occurred
+                      (abort-request "Error occurred while writing to socket" client-in))))
+                ;; (if tls-stream-in
+                ;;   ;; tls -> just write to the ssl handle
+                ;;   (progn
+                ;;     (write-sequence write-buffer-in tls-stream-in :start write-pos-in)
+                ;;     ;; this should only run if the entire buffer was written successfully
+                ;;     (setf (http-client-write-pos client-in)
+                ;;           (length write-buffer-in)))
+                ;;   ;; non-tls -> manually call `--send`
+                ;;   (cffi:with-pointer-to-vector-data (write-buffer-ptr write-buffer-in)
+                ;;     (let ((bytes-sent (--send fd-in (cffi:inc-pointer write-buffer-ptr write-pos-in) writable-len-left-in 0)))
+                ;;       (if (< bytes-sent 0)
+                ;;         ;; handle sending error
+                ;;         (error "Error occurred while writing to socket")
+                ;;         ;; data was sent -> move up the write position
+                ;;         (incf (http-client-write-pos client-in)
+                ;;               bytes-sent)))))
+
+                ;; if all bytes are written -> switch `io-watcher-in` from listening to write events to listening to read events
+                (when (= (length write-buffer-in)
+                         (http-client-write-pos client-in))
+                  (change-lev-io-watcher-mode ev-loop-in io-watcher-in fd-in lev:+ev-read+))))
+
+            ;; if `event-in` is a read event
+            (unless (zerop (logand events-in lev:+ev-read+))
+              (let* ((read-buffer-in (http-client-read-buffer client-in))
+                     (bytes-read (if ssl-handle-in
+                                   ;; ssl -> read from the ssl handle
+                                   (cffi:with-pointer-to-vector-data (read-buffer-ptr read-buffer-in)
+                                     (--ssl-read ssl-handle-in read-buffer-ptr (+RESPONSE_BUFFER_SIZE+)))
+                                   ;; non-ssl -> manually call `--recv`
+                                   (cffi:with-pointer-to-vector-data (read-buffer-ptr read-buffer-in)
+                                     (--recv fd-in read-buffer-ptr (+RESPONSE_BUFFER_SIZE+) 0)))))
+                (declare (type (simple-array (unsigned-byte 8) (*)) read-buffer-in)
+                         (type fixnum bytes-read))
                 (cond
-                  ;; handle sending error
-                  ((< send-res 0)
-                    (format t "~& [derecho] >> Error occurred while writing to socket~%")
+                  ;; handle error on receiving
+                  ((< bytes-read 0)
+                    (abort-request "Error occurred while receiving from socket" client-in))
+                  ;; connection has been closed
+                  ((= bytes-read 0)
                     (free-http-client client-in))
-                  ;; all data was sent
-                  ;;   switch `io-watcher-in` from listening to write events to listening to read events
-                  ((= send-res writable-len-left-in)
-                    (lev:ev-io-stop ev-loop-in io-watcher-in)
-                    (lev:ev-io-init io-watcher-in 'client-io-cb fd-in lev:+ev-read+)
-                    (lev:ev-io-start ev-loop-in io-watcher-in))
-                  ;; not all data was sent (number of bytes written are stored in `send-res`)
+                  ;; some data has been received
+                  ;;   copy the C array into a CL simple-array and run the HTTP parser callback on it
                   (t
-                    (incf (http-client-write-pos client-in)
-                          send-res)))))))
-
-        ;; if `event-in` is a read event
-        (unless (zerop (logand events-in lev:+ev-read+))
-          (let* ((raw-read-buffer-in (http-client-raw-read-buffer client-in))
-                 (recv-res (--recv fd-in raw-read-buffer-in (+RESPONSE_BUFFER_SIZE+) 0)))
-            (declare (type cffi:foreign-pointer raw-read-buffer-in)
-                     (type fixnum recv-res))
-            (cond
-              ;; handle error on receiving
-              ((< recv-res 0)
-                (format t "~& [derecho] >> Error occurred while receiving from socket ~%")
-                (free-http-client client-in))
-              ;; connection has been closed
-              ((= recv-res 0)
-                (free-http-client client-in))
-              ;; some data has been received
-              ;;   copy the C array into a CL simple-array and run the HTTP parser callback on it
-              (t
-                (let ((read-buffer-in (http-client-read-buffer client-in)))
-                  (declare (type (simple-array (unsigned-byte 8) (*)) read-buffer-in))
-                  (cffi:with-pointer-to-vector-data (read-buffer-in-ptr read-buffer-in)
-                    (cffi:foreign-funcall "memcpy"
-                                          :pointer read-buffer-in-ptr
-                                          :pointer raw-read-buffer-in
-                                          :size (+RESPONSE_BUFFER_SIZE+)
-                                          :pointer))
-                  (funcall (http-client-parser client-in)
-                           read-buffer-in
-                           :start 0
-                           :end recv-res)))))))))
+                    (funcall (http-client-parser client-in)
+                             read-buffer-in
+                             :start 0
+                             :end bytes-read))))))))))
 )
 
 ;; send a HTTP request to `url-str-in` within the context of event loop `ev-loop-in`
@@ -166,27 +221,35 @@
              (type fixnum port-in))
 
     (let* ((host-colon-pos (position #\: host-in :test #'char=))
-           (usock (usocket:socket-connect
-                    (if host-colon-pos
-                      (subseq host-in 0 host-colon-pos)
-                      host-in)
-                    port-in :element-type '(unsigned-byte 8)))
-           (fd (get-usocket-fd usock))
+           (fd (get-usocket-fd (usocket:socket-connect
+                                 (if host-colon-pos
+                                   (subseq host-in 0 host-colon-pos)
+                                   host-in)
+                                 port-in :element-type '(unsigned-byte 8))))
+           (tls-p (eq :https (http-url-p url-str-in)))
+           (ssl-handle (when tls-p
+                         (--ssl-new *global-ssl-ctx*)))
            (io-watcher (cffi:foreign-alloc '(:struct lev:ev-io)))
            (req-bytes (build-http-request-bytes host-in path-in))
            (client (make-http-client :fd fd
                                      :ev-loop ev-loop-in
                                      :io-watcher io-watcher
+                                     :tls-handshaking-p tls-p
+                                     :ssl-handle ssl-handle
                                      :write-buffer req-bytes
-                                     :raw-read-buffer (cffi:foreign-alloc :unsigned-char :count (+RESPONSE_BUFFER_SIZE+))
                                      :on-res-fn on-res))
            (http-res-state (fast-http:make-http-response)))
-      (declare ;(type usocket:usocket usock)
-               (type fixnum fd)
+      (declare (type fixnum fd)
+               (type boolean tls-p)
+               (type (or null cffi:foreign-pointer) ssl-handle)
                (type cffi:foreign-pointer io-watcher)
                (type (simple-array (unsigned-byte 8) (*)) req-bytes))
 
       (set-non-blocking fd)
+
+      (when tls-p
+        (--ssl-set-fd ssl-handle fd)
+        (--ssl-set-tls-sni ssl-handle host-in))
 
       (setf (http-client-parser client)
             (fast-http:make-parser http-res-state

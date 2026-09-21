@@ -115,6 +115,7 @@
        (progn
          ,@body-in
          (lev:ev-run ,ev-loop-sym-name 0))
-       ,cleanup-form-in
-       (cffi:foreign-free ,ev-loop-sym-name)))
+       (unwind-protect
+         ,cleanup-form-in
+         (cffi:foreign-free ,ev-loop-sym-name))))
 )

@@ -2,6 +2,7 @@
   (with-lev-event-loop (*ev-loop*)
     ;; delay between tests
     (sleep 2.0)
+    (format t "~&~% >> STARTING HTTP TESTS~%~%")
 
     (dotimes (i 20)
       (test-request (format nil "remote-http-request-get-~D" i) *ev-loop*

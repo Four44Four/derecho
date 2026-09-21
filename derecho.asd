@@ -9,5 +9,6 @@
                (:module "src"
                 :serial t
                 :components ((:file "customize")
+                             (:file "ffi")
                              (:file "util")
                              (:file "derecho")))))
