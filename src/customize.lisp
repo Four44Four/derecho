@@ -8,32 +8,24 @@
 ;;   `cl-user::*derecho-ssl-ctx-opts-mask*` -> OpenSSL context options bitmask
 ;;                                             default: "#x20000" (only `SSL_OP_NO_COMPRESSION` is set)
 
-(eval-when (:compile-toplevel :load-toplevel :execute)
-  (defparameter *response-buffer-size*
-    (let ((user-supplied-val (find-symbol "*DERECHO-RESPONSE-BUFFER-SIZE*" :cl-user)))
-      (if (and user-supplied-val
-               (boundp user-supplied-val))
-        (symbol-value user-supplied-val)
-        8192))))
-(defmacro +RESPONSE_BUFFER_SIZE+ ()
-  *response-buffer-size*)
+(defmacro defcustom (public-sym-str src-macro-sym-name internal-src-sym-name default-value)
+  `(progn
+     (eval-when (:compile-toplevel :load-toplevel :execute)
+       (defparameter ,internal-src-sym-name
+         (let ((user-supplied-val (find-symbol ,public-sym-str :cl-user)))
+           (if (and user-supplied-val
+                    (boundp user-supplied-val))
+             (symbol-value user-supplied-val)
+             ,default-value))))
+     (defmacro ,src-macro-sym-name ()
+       ,internal-src-sym-name))
+)
 
-(eval-when (:compile-toplevel :load-toplevel :execute)
-  (defparameter *ssl-cipher-name*
-    (let ((user-supplied-val (find-symbol "*DERECHO-SSL-CIPHER-NAME*" :cl-user)))
-      (if (and user-supplied-val
-               (boundp user-supplied-val))
-        (symbol-value user-supplied-val)
-        "ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:CHACHA20-POLY1305-SHA256"))))
-(defmacro +SSL_CIPHER_NAME+ ()
-  *ssl-cipher-name*)
+(defcustom "*DERECHO-RESPONSE-BUFFER-SIZE*" +RESPONSE_BUFFER_SIZE+ *response-buffer-size*
+           8192)
 
-(eval-when (:compile-toplevel :load-toplevel :execute)
-  (defparameter *ssl-ctx-opts-mask*
-    (let ((user-supplied-val (find-symbol "*DERECHO-SSL-CTX-OPTS-MASK*" :cl-user)))
-      (if (and user-supplied-val
-               (boundp user-supplied-val))
-        (symbol-value user-supplied-val)
-        #x20000))))
-(defmacro +SSL_CTX_OPTS_MASK+ ()
-  *ssl-ctx-opts-mask*)
+(defcustom "*DERECHO-SSL-CIPHER-NAME*" +SSL_CIPHER_NAME+ *ssl-cipher-name*
+           "ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:CHACHA20-POLY1305-SHA256")
+
+(defcustom "*DERECHO-SSL-CTX-OPTS-MASK*" +SSL_CTX_OPTS_MASK+ *ssl-ctx-opts-mask*
+           #x20000)
