@@ -50,8 +50,8 @@
     :type (simple-array (unsigned-byte 8) (*)))
   (response-body (make-array 0 :element-type '(unsigned-byte 8) :adjustable t :fill-pointer 0)
     :type (vector (unsigned-byte 8)))
-  (on-res-fn #'(lambda (status-in body-in) (declare (ignore status-in body-in)))
-    :type function))
+  (on-res-fn nil ;#'(lambda (status-in body-in) (declare (ignore status-in body-in)))
+    :type (or null (function (fixnum string) *))))
 
 (declaim (ftype (function (http-client)
                   (eql t))
@@ -190,15 +190,25 @@
 
 ;; send a HTTP request to `url-str-in` within the context of event loop `ev-loop-in`
 ;; returns `t`
+;; `method` can be any HTTP method like `:get`, `:post`, `:put`, `:patch`, `:delete`, etc...
 ;; `on-res` should be a function that takes in `status-in` and `response-string-in`
-(declaim (ftype (function (cffi:foreign-pointer string &key (:on-res (function (fixnum string) *)))
+;; `headers` can be either `nil` if omitted or an array of alternating `<header-as-keyword-sym>` and `<header-value-as-string>`
+;; `body` is a string (defaults to `""`)
+(declaim (ftype (function (cffi:foreign-pointer string
+                            &key (:on-res (or null (function (fixnum string) *)))
+                                 (:method keyword)
+                                 (:headers (or null (simple-array (or keyword string) (*))))
+                                 (:body string))
                   (eql t))
                 request))
-(defun request (ev-loop-in url-str-in &key on-res)
+(defun request (ev-loop-in url-str-in &key (method :get) on-res headers (body ""))
   (declare (optimize (speed 3) (safety 1))
            (type cffi:foreign-pointer ev-loop-in)
            (type string url-str-in)
-           (type function on-res))
+           (type keyword method)
+           (type (or null (function (fixnum string) *)) on-res)
+           (type (or null (simple-array (cons keyword string) (*))) headers)
+           (type string body))
   (multiple-value-bind (host-in path-in port-in)
       (parse-url url-str-in)
     (declare (type string host-in
@@ -215,7 +225,7 @@
            (ssl-handle (when tls-p
                          (--ssl-new *global-ssl-ctx*)))
            (io-watcher (cffi:foreign-alloc '(:struct lev:ev-io)))
-           (req-bytes (build-http-request-bytes host-in path-in))
+           (req-bytes (build-http-request-bytes method host-in path-in headers body))
            (client (make-http-client :fd fd
                                      :ev-loop ev-loop-in
                                      :io-watcher io-watcher
@@ -259,9 +269,11 @@
                                           :end2 end-in)))
               :finish-callback #'(lambda ()
                                  ;; call `on-res` with the full response of the request
-                                 (funcall (http-client-on-res-fn client)
-                                          (fast-http:http-status http-res-state)
-                                          (babel:octets-to-string (http-client-response-body client) :encoding :utf-8))
+                                 (let ((on-res-fn (http-client-on-res-fn client)))
+                                   (when on-res-fn
+                                     (funcall on-res-fn
+                                              (fast-http:http-status http-res-state)
+                                              (babel:octets-to-string (http-client-response-body client) :encoding :utf-8))))
                                  (free-http-client client))))
 
       (setf (gethash (cffi:pointer-address io-watcher) *http-clients*)

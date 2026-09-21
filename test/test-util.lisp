@@ -82,11 +82,14 @@
                      res-status-num-expected
                      res-body-str-prefix-expected res-body-str-suffix-expected
                      url-str-in
-                     &optional on-res-callback)
+                     &key on-res (method :get) headers (body ""))
   (drch:request ev-loop-in url-str-in
+    :method method
+    :headers headers
+    :body body
     :on-res #'(lambda (status-in response-str-in)
-              (when on-res-callback
-                (funcall on-res-callback))
+              (when on-res
+                (funcall on-res))
               (cond
                 ((/= status-in res-status-num-expected)
                   (format t "~&~A: [31mFAILED[0m, Status code actually: ~D~%" test-name-in status-in)

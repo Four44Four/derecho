@@ -17,6 +17,7 @@
   (load (uiop:subpathname cur-dir-path "test/tests/general-util.lisp"))
   (load (uiop:subpathname cur-dir-path "test/tests/get-http.lisp"))
   (load (uiop:subpathname cur-dir-path "test/tests/get-https.lisp"))
+  (load (uiop:subpathname cur-dir-path "test/tests/non-get-http.lisp"))
 
   (cond
     ((not (boundp '*failed-test-names*))

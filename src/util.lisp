@@ -83,35 +83,56 @@
                   443)))))
 )
 
-(alexandria:define-constant +GET_BYTE_ARRAY+ (coerce #(71 69 84 32)
-                                                     '(simple-array (unsigned-byte 8) (*)))
-                                             :test #'equalp)
-(alexandria:define-constant +REQ_LINE_ARRAY+ (coerce #(32 72 84 84 80 47 49 46 49 13 10 72 111 115 116 58 32)
-                                                     '(simple-array (unsigned-byte 8) (*)))
-                                             :test #'equalp)
-(alexandria:define-constant +CONN_CLOSE_ARRAY+ (coerce #(13 10 67 111 110 110 101 99 116 105 111 110 58 32 99 108 111 115 101 13 10 13 10)
-                                                       '(simple-array (unsigned-byte 8) (*)))
-                                             :test #'equalp)
+;; (alexandria:define-constant +GET_BYTE_ARRAY+ (coerce #(71 69 84 32)
+;;                                                      '(simple-array (unsigned-byte 8) (*)))
+;;                                              :test #'equalp)
+;; (alexandria:define-constant +REQ_LINE_ARRAY+ (coerce #(32 72 84 84 80 47 49 46 49 13 10 72 111 115 116 58 32)
+;;                                                      '(simple-array (unsigned-byte 8) (*)))
+;;                                              :test #'equalp)
+;; (alexandria:define-constant +CONN_CLOSE_ARRAY+ (coerce #(13 10 67 111 110 110 101 99 116 105 111 110 58 32 99 108 111 115 101 13 10 13 10)
+;;                                                        '(simple-array (unsigned-byte 8) (*)))
+;;                                              :test #'equalp)
 
 ;; returns a byte array of the HTTP 1.1 request payload
+;; `method-keyword-sym-in` can be any HTTP method like `:get`, `:post`, `:put`, `:patch`, `:delete`, etc...
+;; `headers-array-in` can be either `nil` if omitted or an array of alternating `<header-as-keyword-sym>` and `<header-value-as-string>`
+;; `body-str-in` is a string
 (declaim (inline build-http-request-bytes)
-         (ftype (function (string string)
+         (ftype (function (keyword string string (or null (simple-array (or keyword string) (*))) string)
                   (simple-array (unsigned-byte 8) (*)))
                 build-http-request-bytes))
-(defun build-http-request-bytes (host-str-in path-str-in)
+(defun build-http-request-bytes (method-keyword-sym-in host-str-in path-str-in headers-array-in body-str-in)
   (declare (optimize (speed 3) (safety 1))
+           (type keyword method-keyword-sym-in)
            (type string host-str-in
-                        path-str-in))
+                        path-str-in)
+           (type (or null (simple-array (or keyword string) (*))) headers-array-in)
+           (type string body-str-in))
   (fast-io:with-fast-output (buffer-out :vector)
-    ;; TODO: change this later when added support for other HTTP request methods
-    ;; "GET "
-    (fast-io:fast-write-sequence +GET_BYTE_ARRAY+ buffer-out)
+    (fast-io:fast-write-sequence (babel:string-to-octets (symbol-name method-keyword-sym-in)) buffer-out)
+    (fast-io:fast-write-sequence #.(babel:string-to-octets " ") buffer-out)
     (fast-io:fast-write-sequence (babel:string-to-octets path-str-in) buffer-out)
-    ;; " HTTP/1.1\r\nHost: "
-    (fast-io:fast-write-sequence +REQ_LINE_ARRAY+ buffer-out)
+    (fast-io:fast-write-sequence #.(babel:string-to-octets (format nil " HTTP/1.1~C~CHost: " #\Return #\Linefeed)) buffer-out)
     (fast-io:fast-write-sequence (babel:string-to-octets host-str-in) buffer-out)
-    ;; "\r\nConnection: close\r\n\r\n"
-    (fast-io:fast-write-sequence +CONN_CLOSE_ARRAY+ buffer-out))
+    (fast-io:fast-write-sequence #.(babel:string-to-octets (format nil "~C~C" #\Return #\Linefeed)) buffer-out)
+    ;; headers (truncate length down to the lower even number using `logand` trick)
+    (loop for i from 0 below (logand (length headers-array-in) -2) by 2
+          do (progn
+               ;; note: the default parsing of keyword symbols will be capitalized
+               ;;       i.e. `:content-type` -> `"CONTENT-TYPE"`
+               (fast-io:fast-write-sequence (babel:string-to-octets (symbol-name (aref headers-array-in i))) buffer-out)
+               (fast-io:fast-write-sequence #.(babel:string-to-octets ": ") buffer-out)
+               (fast-io:fast-write-sequence (babel:string-to-octets (aref headers-array-in (1+ i))) buffer-out)
+               (fast-io:fast-write-sequence #.(babel:string-to-octets (format nil "~C~C" #\Return #\Linefeed)) buffer-out)))
+    ;; auto generate content-length if body exists
+    (unless (zerop (length body-str-in))
+      (fast-io:fast-write-sequence #.(babel:string-to-octets "content-length: ") buffer-out)
+      (fast-io:fast-write-sequence (babel:string-to-octets (write-to-string (length body-str-in))) buffer-out)
+      (fast-io:fast-write-sequence #.(babel:string-to-octets (format nil "~C~C" #\Return #\Linefeed)) buffer-out))
+    ;; headers delimiter
+    (fast-io:fast-write-sequence #.(babel:string-to-octets (format nil "~C~C" #\Return #\Linefeed)) buffer-out)
+    (unless (zerop (length body-str-in))
+      (fast-io:fast-write-sequence (babel:string-to-octets body-str-in) buffer-out)))
 )
 
 (declaim (inline get-usocket-fd)

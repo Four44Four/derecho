@@ -10,8 +10,8 @@
         (format nil "{~%  \"args\": {}, ~%  \"headers\": {~%    \"Host\": \"httpbin.org\",")
         (format nil "  \"url\": \"http://httpbin.org/get\"~%}~%")
         "http://httpbin.org/get"
-        #'(lambda ()
-          (setf any-requests-done t))))
+        :on-res #'(lambda ()
+                  (setf any-requests-done t))))
 
     (let ((delayed-flag nil))
       (format t "~& >> Starting fake work...~%")
@@ -27,8 +27,8 @@
         (format nil "{~%  \"args\": {}, ~%  \"headers\": {~%    \"Host\": \"httpbin.org\",")
         (format nil "  \"url\": \"http://httpbin.org/get\"~%}~%")
         "http://httpbin.org/get"
-        #'(lambda ()
-          (setf any-requests-done t))))
+        :on-res #'(lambda ()
+                  (setf any-requests-done t))))
 
     ;; TESTING SERVER SHOULD HAVE STARTED BY NOW
 
