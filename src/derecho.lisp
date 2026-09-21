@@ -153,22 +153,6 @@
                             bytes-sent)
                       ;; sending error occurred
                       (abort-request "Error occurred while writing to socket" client-in))))
-                ;; (if tls-stream-in
-                ;;   ;; tls -> just write to the ssl handle
-                ;;   (progn
-                ;;     (write-sequence write-buffer-in tls-stream-in :start write-pos-in)
-                ;;     ;; this should only run if the entire buffer was written successfully
-                ;;     (setf (http-client-write-pos client-in)
-                ;;           (length write-buffer-in)))
-                ;;   ;; non-tls -> manually call `--send`
-                ;;   (cffi:with-pointer-to-vector-data (write-buffer-ptr write-buffer-in)
-                ;;     (let ((bytes-sent (--send fd-in (cffi:inc-pointer write-buffer-ptr write-pos-in) writable-len-left-in 0)))
-                ;;       (if (< bytes-sent 0)
-                ;;         ;; handle sending error
-                ;;         (error "Error occurred while writing to socket")
-                ;;         ;; data was sent -> move up the write position
-                ;;         (incf (http-client-write-pos client-in)
-                ;;               bytes-sent)))))
 
                 ;; if all bytes are written -> switch `io-watcher-in` from listening to write events to listening to read events
                 (when (= (length write-buffer-in)
@@ -194,8 +178,7 @@
                   ;; connection has been closed
                   ((= bytes-read 0)
                     (free-http-client client-in))
-                  ;; some data has been received
-                  ;;   copy the C array into a CL simple-array and run the HTTP parser callback on it
+                  ;; some data has been received -> run the HTTP parser callback on the read-buffer
                   (t
                     (funcall (http-client-parser client-in)
                              read-buffer-in
