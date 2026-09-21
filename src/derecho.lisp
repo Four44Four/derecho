@@ -12,6 +12,8 @@
 ;;            - socket cache size exceeds capacity (default 128) (LRU socket is pruned on addition of a new one)
 ;;         - sockets CANNOT be used across event loops:
 ;;            - connections can only reuse cached sockets from the same event loop and can only leave cached sockets for their own event loop
+;;       add request chaining async macro
+;;         - allow for looping over the same request via recursion (test for tail-calling optimizations)
 
 (declaim (ftype (function (fixnum)
                   fixnum)
