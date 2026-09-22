@@ -2,7 +2,8 @@
 
 (defun test-cond (test-name-in test-cond-in)
   (if test-cond-in
-    (format t "~&~A: [32mpassed[0m~%" test-name-in)
+    ;; (format t "~&~A: [32mpassed[0m~%" test-name-in)
+    (progn)
     (progn
       (format t "~&~A: [31mFAILED[0m~%" test-name-in)
       (push test-name-in *failed-test-names*)))
@@ -10,7 +11,8 @@
 
 (defun test-eq (test-name-in test-val-expected test-val-actual)
   (if (eq test-val-expected test-val-actual)
-    (format t "~&~A: [32mpassed[0m~%" test-name-in)
+    ;; (format t "~&~A: [32mpassed[0m~%" test-name-in)
+    (progn)
     (progn
       (format t "~&~A: [31mFAILED[0m, Actually: ~A~%" test-name-in test-val-actual)
       (push test-name-in *failed-test-names*)))
@@ -25,7 +27,8 @@
              comparators-in
              test-vals-expected
              test-vals-actual))
-    (format t "~&~A: [32mpassed[0m~%" test-name-in)
+    ;; (format t "~&~A: [32mpassed[0m~%" test-name-in)
+    (progn)
     (progn
       (format t "~&~A: [31mFAILED[0m, Actually: ~A~%" test-name-in test-vals-actual)
       (push test-name-in *failed-test-names*)))
@@ -37,7 +40,8 @@
                     (funcall elem-equal-pred-in cur-elem-expected cur-elem-actual))
              test-array-expected
              test-array-actual))
-    (format t "~&~A: [32mpassed[0m~%" test-name-in)
+    ;; (format t "~&~A: [32mpassed[0m~%" test-name-in)
+    (progn)
     (progn
       (format t "~&~A: [31mFAILED[0m, Actually: ~A~%" test-name-in test-array-actual)
       (push test-name-in *failed-test-names*)))
@@ -71,7 +75,8 @@
         (setf passed-test-p nil)))
 
     (if passed-test-p
-      (format t "~&~A: [32mpassed[0m~%" test-name-in)
+      ;; (format t "~&~A: [32mpassed[0m~%" test-name-in)
+      (progn)
       (progn
         (format t "~&~A: [31mFAILED[0m~%" test-name-in)
         (push test-name-in *failed-test-names*))))
@@ -81,35 +86,94 @@
 (defun test-request (test-name-in ev-loop-in
                      res-status-num-expected
                      res-body-str-prefix-expected res-body-str-suffix-expected
+                     res-headers-expected
                      url-str-in
                      &key on-res (method :get) headers (body ""))
-  (drch:request ev-loop-in url-str-in
-    :method method
-    :headers headers
-    :body body
-    :on-res #'(lambda (status-in response-str-in)
-              (when on-res
-                (funcall on-res))
-              (cond
-                ((/= status-in res-status-num-expected)
-                  (format t "~&~A: [31mFAILED[0m, Status code actually: ~D~%" test-name-in status-in)
-                  (push test-name-in *failed-test-names*))
-                ((> (length res-body-str-prefix-expected)
-                    (length response-str-in))
-                  (format t "~&~A: [31mFAILED[0m, Response prefix actually (response too short): `~A`~%" test-name-in response-str-in)
-                  (push test-name-in *failed-test-names*))
-                ((not (uiop:string-prefix-p res-body-str-prefix-expected response-str-in))
-                  (format t "~&~A: [31mFAILED[0m, Response prefix actually: `~A`~%" test-name-in (subseq response-str-in 0 (length res-body-str-prefix-expected)))
-                  (push test-name-in *failed-test-names*))
-                ((> (length res-body-str-suffix-expected)
-                    (length response-str-in))
-                  (format t "~&~A: [31mFAILED[0m, Response suffix actually (response too short): `~A`~%" test-name-in response-str-in)
-                  (push test-name-in *failed-test-names*))
-                ((not (uiop:string-suffix-p response-str-in res-body-str-suffix-expected))
-                  (format t "~&~A: [31mFAILED[0m, Response suffix actually: `~A`~%" test-name-in (subseq response-str-in (- (length response-str-in) (length res-body-str-suffix-expected))))
-                  (push test-name-in *failed-test-names*))
-                (t
-                  (format t "~&~A: [32mpassed[0m~%" test-name-in)))))
+  (let ((header-i 0))
+    (drch:request ev-loop-in url-str-in
+      :method method
+      :headers headers
+      :body body
+      :on-status #'(lambda (status-in)
+                   (unless (= status-in res-status-num-expected)
+                     (format t "~&~A status code: [31mFAILED[0m, Status code actually: ~D~%" test-name-in status-in)
+                     (push (concatenate 'string test-name-in " status code") *failed-test-names*)))
+      :on-header #'(lambda (name-in value-in)
+                   (when res-headers-expected
+                     (unless (string-equal name-in (car (aref res-headers-expected header-i)))
+                       (format t "~&~A header name #~D: [31mFAILED[0m, header name actually: ~D~%" test-name-in header-i name-in)
+                       (push (format nil "~A header value #~D" test-name-in header-i) *failed-test-names*))
+                     (unless (uiop:string-prefix-p (cdr (aref res-headers-expected header-i)) value-in)
+                       (format t "~&~A header value #~D: [31mFAILED[0m, header value actually: ~D~%" test-name-in header-i value-in)
+                       (push (format nil "~A header value #~D" test-name-in header-i) *failed-test-names*)))
+                   (incf header-i))
+      :on-body #'(lambda (response-str-in)
+                (when on-res
+                  (funcall on-res))
+                (cond
+                  ((> (length res-body-str-prefix-expected)
+                      (length response-str-in))
+                    (format t "~&~A body: [31mFAILED[0m, Response prefix actually (response too short): `~A`~%" test-name-in response-str-in)
+                    (push (concatenate 'string test-name-in "body") *failed-test-names*))
+                  ((not (uiop:string-prefix-p res-body-str-prefix-expected response-str-in))
+                    (format t "~&~A body: [31mFAILED[0m, Response prefix actually: `~A`~%" test-name-in (subseq response-str-in 0 (length res-body-str-prefix-expected)))
+                    (push (concatenate 'string test-name-in "body") *failed-test-names*))
+                  ((> (length res-body-str-suffix-expected)
+                      (length response-str-in))
+                    (format t "~&~A body: [31mFAILED[0m, Response suffix actually (response too short): `~A`~%" test-name-in response-str-in)
+                    (push (concatenate 'string test-name-in "body") *failed-test-names*))
+                  ((not (uiop:string-suffix-p response-str-in res-body-str-suffix-expected))
+                    (format t "~&~A body: [31mFAILED[0m, Response suffix actually: `~A`~%" test-name-in (subseq response-str-in (- (length response-str-in) (length res-body-str-suffix-expected))))
+                    (push (concatenate 'string test-name-in "body") *failed-test-names*))
+                  ;; (t
+                  ;;   (format t "~&~A: [32mpassed[0m~%" test-name-in))
+                  ))))
+)
+
+(defun test-request-chunked (test-name-in ev-loop-in
+                             res-status-num-expected
+                             res-body-chunks-expected
+                             res-headers-expected
+                             url-str-in)
+  (let ((i 0)
+        (header-i 0))
+    (drch:request ev-loop-in url-str-in
+                  :no-collect-body-p t
+                  :on-status #'(lambda (status-in)
+                               (unless (= status-in res-status-num-expected)
+                                 (format t "~&~A status code: [31mFAILED[0m, Status code actually: ~D~%" test-name-in status-in)
+                                 (push (concatenate 'string test-name-in " status code") *failed-test-names*)))
+                  :on-header #'(lambda (name-in value-in)
+                               (when res-headers-expected
+                                 (unless (string-equal name-in (car (aref res-headers-expected header-i)))
+                                   (format t "~&~A header name #~D: [31mFAILED[0m, header name actually: ~D~%" test-name-in header-i name-in)
+                                   (push (format nil "~A header value #~D" test-name-in header-i) *failed-test-names*))
+                                 (unless (uiop:string-prefix-p (cdr (aref res-headers-expected header-i)) value-in)
+                                   (format t "~&~A header value #~D: [31mFAILED[0m, header value actually: ~D~%" test-name-in header-i value-in)
+                                   (push (format nil "~A header value #~D" test-name-in header-i) *failed-test-names*)))
+                               (incf header-i))
+                  :on-chunk #'(lambda (body-chunk-in start-pos-in end-pos-in)
+                              (let ((cur-body-chunk-expected (aref res-body-chunks-expected i)))
+                                (when (mismatch body-chunk-in        (babel:string-to-octets cur-body-chunk-expected :encoding :utf-8)
+                                                :start1 start-pos-in :start2 0
+                                                :end1 end-pos-in     :end2 nil)
+                                  (format t "~&~A #~D: [31mFAILED[0m, body chunk actually: ~A~%" test-name-in i (babel:octets-to-string body-chunk-in :start start-pos-in :end end-pos-in))
+                                  (push (format nil "~A #~D" test-name-in i) *failed-test-names*))
+                                ;; (cond
+                                ;;   ((/= end-pos-in (length cur-body-chunk-expected))
+                                ;;     (format t "~&~A #~D: [31mFAILED[0m, response chunk length actually: ~D~%" test-name-in i end-pos-in)
+                                ;;     (push (format nil "~A #~D" test-name-in i) *failed-test-names*))
+                                ;;   (
+                                ;;     )
+                                ;;   ;; (t
+                                ;;   ;;   (format t "~&~A #~D: [32mpassed[0m~%" test-name-in i))
+                                ;;   )
+                                )
+                              (incf i))
+                  :on-body #'(lambda (body-in)
+                             ;; calling this function immediately fails the test
+                             (format t "~&~A: [31mFAILED[0m~%" test-name-in)
+                             (push test-name-in *failed-test-names*))))
 )
 
 (defmacro with-lev-event-loop ((ev-loop-sym-name &optional cleanup-form-in) &rest body-in)

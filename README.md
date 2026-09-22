@@ -2,11 +2,45 @@
  - Common Lisp asynchronous HTTP request client built for [libev](https://software.schmorp.de/pkg/libev.html) through [lev](https://github.com/fukamachi/lev)
 
 ## Usage
+ - Entire body at once
 ```lisp
-(drch:request *lev-ev-loop-ptr* "http://lisp.org")
+(drch:request *lev-ev-loop-ptr* "http://lisp.org"
+              :method :get
+              :on-status #'(lambda (status-in)
+                           (format t "Response status: ~D~%" status-in))
+              :on-header #'(lambda (name-in value-in)
+                           (format t "Found response header name and value: ~A :: ~A~%" name-in value-in))
+              :on-body #'(lambda (body-in)
+                         (format t "Full response body: ~A~%" body-in)))
+```
+ - Body in chunks
+```lisp
+(drch:request *lev-ev-loop-ptr* "http://lisp.org"
+              :method :get
+              :no-collect-body-p t
+              :on-status #'(lambda (status-in)
+                           (format t "Response status: ~D~%" status-in))
+              :on-header #'(lambda (name-in value-in)
+                           (format t "Found response header name and value: ~A :: ~A~%" name-in value-in))
+              :on-chunk #'(lambda (byte-buffer-in start-pos-in end-pos-in)
+                          (format t "Received response body chunk: ~A~%" (babel:octets-to-string byte-buffer-in
+                                                                                                 :start start-pos-in :end end-pos-in))))
+```
+ - With body and custom headers
+```lisp
+(drch:request *lev-ev-loop-ptr* "http://my-database.com/insert"
+              :method :post
+              :no-collect-body-p t
+              :on-status #'(lambda (status-in)
+                           (format t "Response status: ~D~%" status-in))
+              :on-header #'(lambda (name-in value-in)
+                           (format t "Found response header name and value: ~A :: ~A~%" name-in value-in))
+              :headers #'(:content-type "application/json"
+                          :connection "close")
+              :body "{\"username\": \"John Lisp\", \"Age\": 67, \"password\": \"1234567890zxcvbnm\"}")
 ```
 
-## Dedepencies
+## External dedepencies
  - [libev](https://software.schmorp.de/pkg/libev.html)
     - Arch Linux: `sudo pacman -S libev`
     - Ubuntu/Debian: `sudo apt install libev-dev`

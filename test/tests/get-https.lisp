@@ -10,5 +10,12 @@
       200
       (format nil "{~%  \"args\": {}, ~%  \"headers\": {~%    \"Host\": \"httpbin.org\",")
       (format nil "  \"url\": \"https://httpbin.org/get\"~%}~%")
+      `#(("Date" . "")
+         ("Content-type" . "application/json")
+         ("Content-length" . "200")
+         ("Connection" . "keep-alive")
+         ("Server" . "gunicorn")
+         ("Access-Control-Allow-Origin" . "*")
+         ("Access-Control-Allow-Credentials" . "true"))
       "https://httpbin.org/get"))
 )
