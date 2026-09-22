@@ -1,4 +1,8 @@
 (with-lev-event-loop (*ev-loop*)
+  ;; delay between tests
+  (sleep 2.0)
+  (format t "~&~% >> STARTING CHUNKED HTTP RES TESTS~%~%")
+
   (test-request-chunked "local-http-request-chunked-0" *ev-loop*
     200
     `#("bruh moment: 89"

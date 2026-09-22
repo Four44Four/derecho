@@ -90,3 +90,32 @@
           (--ssl-ctx-set-cipher-list ssl-ctx (+SSL_CIPHER_NAME+))
           (--ssl-ctx-set-options ssl-ctx (+SSL_CTX_OPTS_MASK+))
           ssl-ctx))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; non-ssl error reading
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+#+linux
+  (cffi:defcfun ("__errno_location" linux-errno-location) :pointer)
+
+#+(or darwin bsd)
+  (cffi:defcfun ("__error" bsd-error-location) :pointer)
+
+(defun get-errno ()
+  #+linux
+    (cffi:mem-ref (linux-errno-location) :int)
+  #+(or darwin bsd)
+    (cffi:mem-ref (darwin-error-location) :int)
+  #-(or linux darwin bsd)
+    0
+)
+
+#+linux
+  (defconstant +eagain+ 11)
+#+(or darwin bsd)
+  (defconstant +eagain+ 35)
+
+#+linux
+  (defconstant +ewouldblock+ 11)
+#+(or darwin bsd)
+  (defconstant +ewouldblock+ 35)

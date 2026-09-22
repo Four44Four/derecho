@@ -96,18 +96,18 @@
 ;; returns a byte array of the HTTP 1.1 request payload
 ;; `method-keyword-sym-in` can be any HTTP method like `:get`, `:post`, `:put`, `:patch`, `:delete`, etc...
 ;; `headers-array-in` can be either `nil` if omitted or an array of alternating `<header-as-keyword-sym>` and `<header-value-as-string>`
-;; `body-str-in` is a string
+;; `body-in` is a string or the keyword `:chunked`
 (declaim (inline build-http-request-bytes)
-         (ftype (function (keyword string string (or null (simple-array (or keyword string) (*))) string)
+         (ftype (function (keyword string string (or null (simple-array (or keyword string) (*))) (or string (eql :chunked)))
                   (simple-array (unsigned-byte 8) (*)))
                 build-http-request-bytes))
-(defun build-http-request-bytes (method-keyword-sym-in host-str-in path-str-in headers-array-in body-str-in)
+(defun build-http-request-bytes (method-keyword-sym-in host-str-in path-str-in headers-array-in body-in)
   (declare (optimize (speed 3) (safety 1))
            (type keyword method-keyword-sym-in)
            (type string host-str-in
                         path-str-in)
            (type (or null (simple-array (or keyword string) (*))) headers-array-in)
-           (type string body-str-in))
+           (type (or string (eql :chunked)) body-in))
   (fast-io:with-fast-output (buffer-out :vector)
     (fast-io:fast-write-sequence (babel:string-to-octets (symbol-name method-keyword-sym-in)) buffer-out)
     (fast-io:fast-write-sequence #.(babel:string-to-octets " ") buffer-out)
@@ -124,15 +124,21 @@
                (fast-io:fast-write-sequence #.(babel:string-to-octets ": ") buffer-out)
                (fast-io:fast-write-sequence (babel:string-to-octets (aref headers-array-in (1+ i))) buffer-out)
                (fast-io:fast-write-sequence #.(babel:string-to-octets (format nil "~C~C" #\Return #\Linefeed)) buffer-out)))
-    ;; auto generate content-length if body exists
-    (unless (zerop (length body-str-in))
-      (fast-io:fast-write-sequence #.(babel:string-to-octets "content-length: ") buffer-out)
-      (fast-io:fast-write-sequence (babel:string-to-octets (write-to-string (length body-str-in))) buffer-out)
-      (fast-io:fast-write-sequence #.(babel:string-to-octets (format nil "~C~C" #\Return #\Linefeed)) buffer-out))
-    ;; headers delimiter
-    (fast-io:fast-write-sequence #.(babel:string-to-octets (format nil "~C~C" #\Return #\Linefeed)) buffer-out)
-    (unless (zerop (length body-str-in))
-      (fast-io:fast-write-sequence (babel:string-to-octets body-str-in) buffer-out)))
+    (let ((valid-str-body (and (stringp body-in)
+                               (not (zerop (length body-in))))))
+      ;; auto generate chunked header if body is `:chunked`
+      (when (eq body-in :chunked)
+        (fast-io:fast-write-sequence #.(babel:string-to-octets "transfer-encoding: chunked") buffer-out)
+        (fast-io:fast-write-sequence #.(babel:string-to-octets (format nil "~C~C" #\Return #\Linefeed)) buffer-out))
+      ;; auto generate content-length if body as a string exists
+      (when valid-str-body
+        (fast-io:fast-write-sequence #.(babel:string-to-octets "content-length: ") buffer-out)
+        (fast-io:fast-write-sequence (babel:string-to-octets (write-to-string (length body-in))) buffer-out)
+        (fast-io:fast-write-sequence #.(babel:string-to-octets (format nil "~C~C" #\Return #\Linefeed)) buffer-out))
+      ;; headers delimiter
+      (fast-io:fast-write-sequence #.(babel:string-to-octets (format nil "~C~C" #\Return #\Linefeed)) buffer-out)
+      (when valid-str-body
+        (fast-io:fast-write-sequence (babel:string-to-octets body-in) buffer-out))))
 )
 
 (declaim (inline get-usocket-fd)
@@ -165,4 +171,30 @@
            (car (ext:stream-handles raw-socket)))
     #-(or sbcl ccl ecl lispworks allegro clisp)
       (error "Unsupported CL implementation for `get-usocket-fd`"))
+)
+
+;; returns the chunk header for a byte array body chunk `body-chunk-in` in the format "<length-in-hex>\r\n" as a byte array
+(declaim (ftype (function ((simple-array (unsigned-byte 8) (*)))
+                  (simple-array (unsigned-byte 8) (*)))
+                get-body-chunk-header))
+(defun get-body-chunk-header (body-chunk-in)
+  (declare (optimize (speed 3) (safety 0) (debug 0))
+           (type (simple-array (unsigned-byte 8) (*)) body-chunk-in))
+  (let* ((body-length-in (length body-chunk-in))
+         (hex-digits-count (max 1 (ceiling (integer-length body-length-in) 4)))
+         (ret-arr (make-array (+ hex-digits-count 2) :element-type '(unsigned-byte 8))))
+    (declare (type fixnum body-length-in
+                          hex-digits-count)
+             (type (simple-array (unsigned-byte 8) (*)) ret-arr))
+    (loop for i from (1- hex-digits-count) downto 0
+          for bit-i from 0 by 4
+          do (let ((cur-nibble (ldb (byte 4 bit-i) body-length-in)))
+               (setf (aref ret-arr i)
+                     (char-code (schar "0123456789ABCDEF" cur-nibble)))))
+    ;; append CR and LF bytes
+    (setf (aref ret-arr hex-digits-count)
+          13)
+    (setf (aref ret-arr (1+ hex-digits-count))
+          10)
+    ret-arr)
 )

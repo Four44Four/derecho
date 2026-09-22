@@ -13,7 +13,7 @@
               :on-body #'(lambda (body-in)
                          (format t "Full response body: ~A~%" body-in)))
 ```
- - Body in chunks
+ - Response body in chunks
 ```lisp
 (drch:request *lev-ev-loop-ptr* "http://lisp.org"
               :method :get
@@ -35,9 +35,34 @@
                            (format t "Response status: ~D~%" status-in))
               :on-header #'(lambda (name-in value-in)
                            (format t "Found response header name and value: ~A :: ~A~%" name-in value-in))
-              :headers #'(:content-type "application/json"
-                          :connection "close")
+              :headers #(:content-type "application/json"
+                         :connection "close")
               :body "{\"username\": \"John Lisp\", \"Age\": 67, \"password\": \"1234567890zxcvbnm\"}")
+```
+ - Request body in chunks
+```lisp
+(let ((data-frame (make-array 30))
+      (k 0))
+  ;; 30 rows of 1,000,000 random bytes
+  (dotimes (i (length data-frame))
+    (let ((row (make-array 1000000 :element-type '(unsigned-byte 8))))
+      (dotimes (j (length row))
+        (setf (aref row j) (random 256)))
+      (setf (aref data-frame i) row)))
+
+  (drch:request *lev-ev-loop-ptr* "http://my-database.com/insert"
+                :method :post
+                :no-collect-body-p t
+                :on-status #'(lambda (status-in)
+                             (format t "Response status: ~D~%" status-in))
+                :on-header #'(lambda (name-in value-in)
+                             (format t "Found response header name and value: ~A :: ~A~%" name-in value-in))
+                :headers #(:content-type "application/octet-stream"
+                           :connection "close")
+                :body #'(lambda ()
+                        (multiple-value-prog1 (values (aref data-frame k) 
+                                                      (= k (1- (length data-frame))))
+                          (incf k)))))
 ```
 
 ## External dedepencies

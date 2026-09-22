@@ -176,6 +176,56 @@
                              (push test-name-in *failed-test-names*))))
 )
 
+(defun test-request-chunked-write (test-name-in ev-loop-in
+                                   res-status-num-expected
+                                   res-body-str-prefix-expected res-body-str-suffix-expected
+                                   res-headers-expected
+                                   url-str-in
+                                   &key (method :get) headers body-chunks)
+  (let ((i 0)
+        (header-i 0))
+    (drch:request ev-loop-in url-str-in
+                  :method method
+                  :headers headers
+                  :body #'(lambda ()
+                          (multiple-value-prog1 (values (aref body-chunks i)
+                                                        (= i (1- (length body-chunks))))
+                            (incf i)))
+                  :on-status #'(lambda (status-in)
+                               (unless (= status-in res-status-num-expected)
+                                 (format t "~&~A status code: [31mFAILED[0m, Status code actually: ~D~%" test-name-in status-in)
+                                 (push (concatenate 'string test-name-in " status code") *failed-test-names*)))
+                  :on-header #'(lambda (name-in value-in)
+                               (when res-headers-expected
+                                 (unless (string-equal name-in (car (aref res-headers-expected header-i)))
+                                   (format t "~&~A header name #~D: [31mFAILED[0m, header name actually: ~D~%" test-name-in header-i name-in)
+                                   (push (format nil "~A header value #~D" test-name-in header-i) *failed-test-names*))
+                                 (unless (uiop:string-prefix-p (cdr (aref res-headers-expected header-i)) value-in)
+                                   (format t "~&~A header value #~D: [31mFAILED[0m, header value actually: ~D~%" test-name-in header-i value-in)
+                                   (push (format nil "~A header value #~D" test-name-in header-i) *failed-test-names*)))
+                               (incf header-i))
+                  :on-body #'(lambda (response-str-in)
+                             (cond
+                               ((> (length res-body-str-prefix-expected)
+                                   (length response-str-in))
+                                 (format t "~&~A body: [31mFAILED[0m, Response prefix actually (response too short): `~A`~%" test-name-in response-str-in)
+                                 (push (concatenate 'string test-name-in "body") *failed-test-names*))
+                               ((not (uiop:string-prefix-p res-body-str-prefix-expected response-str-in))
+                                 (format t "~&~A body: [31mFAILED[0m, Response prefix actually: `~A`~%" test-name-in (subseq response-str-in 0 (length res-body-str-prefix-expected)))
+                                 (push (concatenate 'string test-name-in "body") *failed-test-names*))
+                               ((> (length res-body-str-suffix-expected)
+                                   (length response-str-in))
+                                 (format t "~&~A body: [31mFAILED[0m, Response suffix actually (response too short): `~A`~%" test-name-in response-str-in)
+                                 (push (concatenate 'string test-name-in "body") *failed-test-names*))
+                               ((not (uiop:string-suffix-p response-str-in res-body-str-suffix-expected))
+                                 (format t "~&~A body: [31mFAILED[0m, Response suffix actually: `~A`~%" test-name-in (subseq response-str-in (- (length response-str-in) (length res-body-str-suffix-expected))))
+                                 (push (concatenate 'string test-name-in "body") *failed-test-names*))
+                               ;; (t
+                               ;;   (format t "~&~A: [32mpassed[0m~%" test-name-in))
+                               ))
+      ))
+)
+
 (defmacro with-lev-event-loop ((ev-loop-sym-name &optional cleanup-form-in) &rest body-in)
   `(let ((,ev-loop-sym-name (lev:ev-loop-new 0)))
      (unwind-protect
